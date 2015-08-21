@@ -1,0 +1,136 @@
+---
+Title: Predicting the manner of exercise through Practical Machine Learning
+Author: "Cheah Joune Seng"
+output:
+html_document:
+fig_height: 9
+fig_width: 9
+--- 
+## Background Introduction  
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it.  
+
+The goal of the project is to try to quantify how well users did the exercise using a prediction Model.
+
+## Reproducibility
+The following libraries were used for the project.
+```{r, cache = T}
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(corrplot)
+```
+To ensure reproducibility, the following seed was used.
+```{r, cache = T}
+set.seed(10000) # For reproducibile purpose
+```
+
+## Data Preprocessing  
+### 1.Download the Data
+```{r, cache = T}
+trainUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+trainFile <- "./data/training.csv"
+testFile  <- "./data/testing.csv"
+if (!file.exists("./data")) {
+  dir.create("./data")
+}
+if (!file.exists(trainFile)) {
+  download.file(trainUrl, destfile=trainFile)
+}
+if (!file.exists(testFile)) {
+  download.file(testUrl, destfile=testFile)
+}
+```  
+### 2. Read the 2 csv files into 2 dataframes.
+```{r, cache = T}
+training <- read.csv(trainFile)
+testing <- read.csv(testFile)
+dim(training)
+dim(testing)
+```
+
+### 3. Cleaning the Data
+Remove columns that contain NA missing values.
+```{r, cache = T}
+training <- training[, colSums(is.na(training)) == 0] 
+testing <- testing[, colSums(is.na(testing)) == 0] 
+str(training)
+```  
+Remove columns that are mainly for recording purposes and are unrelated to movement
+```{r, cache = T}
+classe <-training$classe
+trainRemove <- grepl("^X|timestamp|window", names(training))
+training <- training[, !trainRemove]
+trainingClean <- training[, sapply(training, is.numeric)]
+trainingClean$classe <- classe
+testRemove <- grepl("^X|timestamp|window", names(testing))
+testing <- testing[, !testRemove]
+testingCleaned <- testing[, sapply(testing, is.numeric)]
+```
+
+### Partitioning the training set into 2
+Here we will parition the training set into a pure training data set (60%) and a validation data set (40%).
+```{r, cache = T}
+inTrain <- createDataPartition(y=training$classe, p=0.6, list=FALSE)
+myTraining <- trainingClean[inTrain, ]; 
+myTesting <- trainingClean[-inTrain, ]
+dim(myTraining); 
+dim(myTesting)
+```
+
+## Data Modeling
+### 1. Predictive Model: Decision Tree
+We fit a predictive model using the Decision Tree algorithm.
+```{r, cache = T}
+modFitDecisionTree <- rpart(classe ~ ., data=myTraining, method="class")
+```
+Prediction & Performace:
+```{r, cache = T}
+predictionsDecisionTree <- predict(modFitDecisionTree, myTesting, type = "class")
+confusionMatrix(predictionsDecisionTree, myTesting$classe)
+```
+
+### 2. Predictive Model: Random Forest
+We fit a predictive model using Random Forest algorithm. We will use 5-fold cross validation when applying the algorithm.  
+```{r, cache = T}
+controlRf <- trainControl(method="cv", 5)
+modFitRandomforest <- train(classe ~ ., data=myTraining, method="rf", trControl=controlRf, ntree=250)
+modFitRandomforest
+```
+Prediction & Performace:  
+```{r, cache = T}
+predictionsRandomforest <- predict(modFitRandomforest, myTesting)
+confusionMatrix(myTesting$classe, predictionsRandomforest)
+```
+
+```{r, cache = T}
+accuracy <- postResample(predictionsRandomforest, myTesting$classe)
+accuracy
+oose <- 1 - as.numeric(confusionMatrix(myTesting$classe, predictionsRandomforest)$overall[1])
+oose
+```
+
+So, the estimated accuracy of the model is 99.17% and the estimated out-of-sample error is 0.83%.
+
+Choose the model derivied using the randomForest algorithm as it has higher accuracy.
+
+## Predicting using Test Data Set
+1. Remove problem_id
+```{r, cache = T}
+result <- predict(modFitRandomforest, testingCleaned[, -length(names(testingCleaned))])
+result
+```  
+
+## Appendix: Figures
+1. Decision Tree Visualization
+```{r, cache = T}
+prp(modFitDecisionTree) # fast plot
+```
+
+2. Correlation Matrix Visualization  
+```{r, cache = T}
+corrPlot <- cor(myTraining[, -length(names(myTraining))])
+corrplot(corrPlot, method="color")
+```
+
